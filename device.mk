@@ -534,6 +534,9 @@ PRODUCT_PACKAGES += \
     firmware_wlan_mac.bin_symlink \
     firmware_WCNSS_qcom_cfg.ini_symlink 
 
+# NothingOS Camera
+$(call inherit-product-if-exists, device/nothing/Pong-camera/nothing-camera.mk)
+
 # Inherit from the proprietary files makefile.
 $(call inherit-product, vendor/nothing/Pong/Pong-vendor.mk)
 
