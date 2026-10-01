@@ -14,6 +14,13 @@ $(call inherit-product, device/nothing/Pong/device.mk)
 # Inherit some common Lineage stuff.
 $(call inherit-product, vendor/lineage/config/common_full_phone.mk)
 
+# AxionAOSP
+AXION_MAINTAINER := Paul
+AXION_PROCESSOR := Snapdragon_8+_Gen_1
+AXION_CAMERA_REAR_INFO := 50,50
+AXION_CAMERA_FRONT_INFO := 32
+TARGET_ENABLE_BLUR := true
+
 PRODUCT_NAME := lineage_Pong
 PRODUCT_DEVICE := Pong
 PRODUCT_MANUFACTURER := Nothing
