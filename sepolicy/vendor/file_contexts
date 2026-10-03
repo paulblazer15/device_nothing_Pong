@@ -29,6 +29,7 @@
 /vendor/lib64/libarcsoft_turbo_fusion_raw_super_night\.so          u:object_r:same_process_hal_file:s0
 /vendor/lib64/libarcsoft_turbo_fusion_raw_portrait_super_night\.so u:object_r:same_process_hal_file:s0
 /vendor/lib64/libarcsoft_facialrestoration\.so                     u:object_r:same_process_hal_file:s0
+/vendor/lib64/vendor\.qti\.hardware\.camera\.postproc@1\.0-nothing\.so u:object_r:same_process_hal_file:s0
 
 # Charging control
 /vendor/bin/nt-charging-control	                u:object_r:nt_chg_exec:s0
