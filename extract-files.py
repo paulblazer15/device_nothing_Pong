@@ -115,6 +115,9 @@ blob_fixups: blob_fixups_user_type = {
         'vendor/lib64/camx.provider@2.5-legacy.so',
         'vendor/lib64/camx.provider@2.6-legacy.so',
         'vendor/lib64/camx.provider@2.7-legacy.so',
+    ): blob_fixup()
+        .replace_needed('libtinyxml2.so', 'libtinyxml2-v34.so'),
+    (
         'vendor/lib64/libdpps.so',
         'vendor/lib64/libsnapdragoncolor-manager.so',
     ): blob_fixup()
