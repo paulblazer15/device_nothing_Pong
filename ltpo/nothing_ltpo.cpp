@@ -37,6 +37,7 @@ constexpr char kInputDirectory[] = "/dev/input";
 constexpr char kCurrentFpsProperty[] = "vendor.display.ltpo.current_fps";
 constexpr char kScreenStateProperty[] = "debug.tracing.screen_state";
 constexpr char kKeyguardStateProperty[] = "debug.tracing.keyguard_state";
+constexpr char kForcePeakRefreshRateProperty[] = "debug.tracing.force_peak_refresh_rate";
 
 constexpr int kAod30HzIndex = 0;
 constexpr int kAod10HzIndex = 1;
@@ -357,8 +358,10 @@ int main(int /* argc */, char** argv) {
 
         const bool enabled = android::base::GetBoolProperty(
                 "persist.vendor.display.ltpo.enabled", true);
+        const bool forcePeakRefreshRate =
+                android::base::GetBoolProperty(kForcePeakRefreshRateProperty, false);
         int targetIndex = kActiveIndex;
-        if (enabled) {
+        if (enabled && (!forcePeakRefreshRate || isDozing)) {
             const int minimumFps = ReadMinimumFps();
             const int64_t idle30Ms = std::max<int64_t>(
                     250, android::base::GetIntProperty(
