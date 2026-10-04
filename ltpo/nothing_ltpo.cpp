@@ -40,6 +40,8 @@ constexpr int k60HzIndex = 7;
 constexpr int k30HzIndex = 8;
 constexpr int k10HzIndex = 10;
 constexpr int k1HzIndex = 11;
+constexpr int64_t kOverlayFrameGraceNs = 2000000000LL;
+constexpr unsigned long long kOverlayMaxFrames = 2;
 
 std::atomic<int64_t> gLastInputNs{0};
 
@@ -135,19 +137,19 @@ bool ReadBrightness(int* brightness) {
     return android::base::ParseInt(android::base::Trim(value), brightness);
 }
 
-bool HasRecentFrames() {
+unsigned long long ReadRecentFrameCount() {
     std::string value;
     if (!android::base::ReadFileToString(kMeasuredFpsPath, &value)) {
-        return false;
+        return 0;
     }
 
     unsigned long long frameCount = 0;
     const size_t position = value.find("frame_count:");
     if (position == std::string::npos ||
         sscanf(value.c_str() + position, "frame_count:%llu", &frameCount) != 1) {
-        return false;
+        return 0;
     }
-    return frameCount > 0;
+    return frameCount;
 }
 
 int ReadMinimumFps() {
@@ -183,11 +185,30 @@ const char* IndexName(int index) {
     }
 }
 
+int IndexToFps(int index) {
+    switch (index) {
+        case k60HzIndex:
+            return 60;
+        case k30HzIndex:
+            return 30;
+        case k10HzIndex:
+            return 10;
+        case k1HzIndex:
+            return 1;
+        default:
+            return 120;
+    }
+}
+
 bool ApplyIndex(int index) {
     if (!android::base::WriteStringToFile(std::to_string(index), kSkipFramePath)) {
         PLOG(WARNING) << "Failed to switch panel to " << IndexName(index) << " (index " << index
                       << ")";
         return false;
+    }
+    if (!android::base::SetProperty("vendor.display.ltpo.current_fps",
+                                    std::to_string(IndexToFps(index)))) {
+        LOG(WARNING) << "Unable to publish the effective panel refresh rate";
     }
     LOG(INFO) << "Panel state: " << IndexName(index) << " (index " << index << ")";
     return true;
@@ -222,6 +243,7 @@ int main(int /* argc */, char** argv) {
     int previousBrightness = -1;
     bool wasEnabled = false;
     int64_t lastActivityNs = NowNs();
+    int64_t lastTransitionNs = 0;
 
     LOG(INFO) << "Pong NT37705 LTPO controller started";
 
@@ -249,7 +271,14 @@ int main(int /* argc */, char** argv) {
         }
 
         const int64_t inputNs = gLastInputNs.load(std::memory_order_relaxed);
-        if (inputNs > lastActivityNs || HasRecentFrames()) {
+        const unsigned long long frameCount = ReadRecentFrameCount();
+        // Updating the developer refresh-rate overlay produces one compositor
+        // frame after a panel transition. Ignore that bounded echo while still
+        // treating input, brightness changes, or a real frame burst as activity.
+        const bool overlayOnlyFrames =
+                lastTransitionNs > 0 && nowNs - lastTransitionNs < kOverlayFrameGraceNs &&
+                frameCount <= kOverlayMaxFrames;
+        if (inputNs > lastActivityNs || (frameCount > 0 && !overlayOnlyFrames)) {
             lastActivityNs = std::max(inputNs, nowNs);
         }
 
@@ -272,7 +301,9 @@ int main(int /* argc */, char** argv) {
         }
 
         if (targetIndex != appliedIndex) {
-            ApplyIndex(targetIndex);
+            if (ApplyIndex(targetIndex)) {
+                lastTransitionNs = nowNs;
+            }
             // A fixed 60/90 Hz display mode can temporarily reject the NT37705
             // command. Record the attempt to avoid repeatedly hitting the kernel.
             appliedIndex = targetIndex;
