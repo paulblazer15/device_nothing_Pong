@@ -1,0 +1,8 @@
+service vendor.nothing-ltpo /vendor/bin/nothing_ltpo
+    class late_start
+    user root
+    group root input graphics
+    disabled
+
+on property:sys.boot_completed=1
+    start vendor.nothing-ltpo

@@ -1,0 +1,12 @@
+type nothing_ltpo, domain;
+type nothing_ltpo_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(nothing_ltpo)
+
+set_prop(nothing_ltpo, vendor_display_prop)
+
+r_dir_file(nothing_ltpo, input_device)
+allow nothing_ltpo input_device:chr_file { getattr ioctl open read };
+
+r_dir_file(nothing_ltpo, vendor_sysfs_graphics)
+allow nothing_ltpo vendor_sysfs_graphics:file rw_file_perms;

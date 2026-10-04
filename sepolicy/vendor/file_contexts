@@ -34,6 +34,9 @@
 # Charging control
 /vendor/bin/nt-charging-control	                u:object_r:nt_chg_exec:s0
 
+# LTPO
+/vendor/bin/nothing_ltpo                         u:object_r:nothing_ltpo_exec:s0
+
 # Fingerprint
 /dev/goodix_fp                                                                                     u:object_r:fingerprint_device:s0
 /mnt/vendor/persist/goodix(/.*)?                                                                   u:object_r:vendor_persist_goodix_file:s0

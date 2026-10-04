@@ -1,0 +1,20 @@
+//
+// Copyright (C) 2026 The AxionAOSP Project
+// SPDX-License-Identifier: Apache-2.0
+//
+
+cc_binary {
+    name: "nothing_ltpo",
+    srcs: ["nothing_ltpo.cpp"],
+    vendor: true,
+    init_rc: ["nothing_ltpo.rc"],
+    shared_libs: [
+        "libbase",
+        "liblog",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+    ],
+}

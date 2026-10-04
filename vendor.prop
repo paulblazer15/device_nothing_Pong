@@ -134,6 +134,7 @@ vendor.display.disable_sdr_histogram=1
 vendor.display.disable_spec_fence=1
 vendor.display.disable_stc_dimming=1
 vendor.display.disable_system_load_check=1
+vendor.display.enable_allow_idle_fallback=0
 vendor.display.enable_async_powermode=0
 vendor.display.enable_async_vds_creation=1
 vendor.display.enable_dpps_dynamic_fps=1
@@ -182,13 +183,19 @@ ro.surface_flinger.max_frame_buffer_acquired_buffers=3
 ro.surface_flinger.max_virtual_display_dimension=4096
 ro.surface_flinger.protected_contents=true
 ro.surface_flinger.set_display_power_timer_ms=1000
-ro.surface_flinger.set_idle_timer_ms=80
+# The NT37705 panel idle rate is managed by nothing_ltpo. Keep SurfaceFlinger's
+# legacy idle timer from switching the base mode to 60 Hz, where the panel
+# driver intentionally rejects skip-frame commands.
+ro.surface_flinger.set_idle_timer_ms=0
 ro.surface_flinger.set_touch_timer_ms=200
 ro.surface_flinger.supports_background_blur=1
 ro.surface_flinger.uclamp.min=64
 ro.surface_flinger.use_color_management=true
 ro.surface_flinger.use_content_detection_for_refresh_rate=true
 ro.surface_flinger.wcg_composition_dataspace=143261696
+ro.vendor.display.ltpo.supported=true
+persist.vendor.display.ltpo.enabled=true
+persist.vendor.display.ltpo.min_fps=1
 
 # Incremental FS
 ro.incremental.enable=yes
