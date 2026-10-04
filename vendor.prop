@@ -199,6 +199,7 @@ ro.surface_flinger.use_content_detection_for_refresh_rate=true
 ro.surface_flinger.wcg_composition_dataspace=143261696
 ro.vendor.display.ltpo.supported=true
 persist.vendor.display.ltpo.enabled=true
+persist.vendor.display.ltpo.keyguard_30_ms=3000
 persist.vendor.display.ltpo.min_fps=1
 
 # Incremental FS

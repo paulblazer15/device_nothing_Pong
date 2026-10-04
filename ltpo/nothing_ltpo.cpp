@@ -36,6 +36,7 @@ constexpr char kBrightnessPath[] = "/sys/class/backlight/panel0-backlight/bright
 constexpr char kInputDirectory[] = "/dev/input";
 constexpr char kCurrentFpsProperty[] = "vendor.display.ltpo.current_fps";
 constexpr char kScreenStateProperty[] = "debug.tracing.screen_state";
+constexpr char kKeyguardStateProperty[] = "debug.tracing.keyguard_state";
 
 constexpr int kAod30HzIndex = 0;
 constexpr int kAod10HzIndex = 1;
@@ -178,6 +179,15 @@ int DesiredIndex(int64_t idleMs, int minimumFps, int64_t idle30Ms, int64_t idle1
     return k1HzIndex;
 }
 
+int DesiredKeyguardIndex(int64_t idleMs, int minimumFps, int64_t idle60Ms, int64_t idle30Ms,
+                         int64_t idle10Ms, int64_t idle1Ms) {
+    if (idleMs < idle60Ms) return kActiveIndex;
+    if (minimumFps == 60 || idleMs < idle30Ms) return k60HzIndex;
+    if (minimumFps == 30 || idleMs < idle10Ms) return k30HzIndex;
+    if (minimumFps == 10 || idleMs < idle1Ms) return k10HzIndex;
+    return k1HzIndex;
+}
+
 int DesiredAodIndex(int64_t idleMs, int minimumFps, int64_t idle10Ms, int64_t idle1Ms) {
     if (minimumFps >= 30 || idleMs < idle10Ms) return kAod30HzIndex;
     if (minimumFps >= 10 || idleMs < idle1Ms) return kAod10HzIndex;
@@ -280,6 +290,7 @@ int main(int /* argc */, char** argv) {
     int64_t lastRenderedFrameNs = lastInteractionNs;
     int64_t dozeStartNs = lastInteractionNs;
     bool wasDozing = false;
+    bool wasKeyguardShowing = false;
 
     LOG(INFO) << "Pong NT37705 LTPO controller started";
 
@@ -299,9 +310,11 @@ int main(int /* argc */, char** argv) {
             wasEnabled = true;
         }
 
+        const bool keyguardShowing =
+                android::base::GetBoolProperty(kKeyguardStateProperty, false);
         int brightness = -1;
         if (ReadBrightness(&brightness)) {
-            if (previousBrightness >= 0 && brightness != previousBrightness) {
+            if (!keyguardShowing && previousBrightness >= 0 && brightness != previousBrightness) {
                 lastInteractionNs = nowNs;
             }
             previousBrightness = brightness;
@@ -335,6 +348,13 @@ int main(int /* argc */, char** argv) {
             wasDozing = isDozing;
         }
 
+        if (keyguardShowing != wasKeyguardShowing) {
+            appliedIndex = -1;
+            lastInteractionNs = nowNs;
+            lastRenderedFrameNs = nowNs;
+            wasKeyguardShowing = keyguardShowing;
+        }
+
         const bool enabled = android::base::GetBoolProperty(
                 "persist.vendor.display.ltpo.enabled", true);
         int targetIndex = kActiveIndex;
@@ -346,6 +366,10 @@ int main(int /* argc */, char** argv) {
             const int64_t idle10Ms = std::max<int64_t>(
                     idle30Ms, android::base::GetIntProperty(
                                       "persist.vendor.display.ltpo.idle_10_ms", 4000));
+            const int64_t keyguard30Ms = std::clamp<int64_t>(
+                    android::base::GetIntProperty(
+                            "persist.vendor.display.ltpo.keyguard_30_ms", 3000),
+                    idle30Ms, idle10Ms);
             const int64_t idle1Ms = std::max<int64_t>(
                     idle10Ms, android::base::GetIntProperty(
                                       "persist.vendor.display.ltpo.idle_1_ms", 8000));
@@ -359,6 +383,11 @@ int main(int /* argc */, char** argv) {
                 const int64_t interactionIdleMs = (nowNs - lastInteractionNs) / 1000000LL;
                 if (interactionIdleMs < idle30Ms) {
                     targetIndex = kActiveIndex;
+                } else if (keyguardShowing) {
+                    // SystemUI continuously redraws its clock and effects. Once the
+                    // interaction boost expires, treat a visible lockscreen as static.
+                    targetIndex = DesiredKeyguardIndex(interactionIdleMs, minimumFps, idle30Ms,
+                                                       keyguard30Ms, idle10Ms, idle1Ms);
                 } else if (sustainedRendering || minimumFps == 60) {
                     targetIndex = k60HzIndex;
                 } else {
