@@ -35,13 +35,21 @@ constexpr char kDisplayEnabledPath[] = "/sys/class/drm/card0/card0-DSI-1/enabled
 constexpr char kBrightnessPath[] = "/sys/class/backlight/panel0-backlight/brightness";
 constexpr char kInputDirectory[] = "/dev/input";
 constexpr char kCurrentFpsProperty[] = "vendor.display.ltpo.current_fps";
+constexpr char kScreenStateProperty[] = "debug.tracing.screen_state";
 
+constexpr int kAod30HzIndex = 0;
+constexpr int kAod10HzIndex = 1;
+constexpr int kAod1HzIndex = 2;
 constexpr int kActiveIndex = 16;
 constexpr int k60HzIndex = 7;
 constexpr int k30HzIndex = 8;
 constexpr int k10HzIndex = 10;
 constexpr int k1HzIndex = 11;
 constexpr unsigned long long kOverlayMaxFrames = 2;
+
+constexpr int kScreenStateOn = 2;
+constexpr int kScreenStateDoze = 3;
+constexpr int kScreenStateDozeSuspend = 4;
 
 std::atomic<int64_t> gLastInputNs{0};
 
@@ -170,8 +178,20 @@ int DesiredIndex(int64_t idleMs, int minimumFps, int64_t idle30Ms, int64_t idle1
     return k1HzIndex;
 }
 
+int DesiredAodIndex(int64_t idleMs, int minimumFps, int64_t idle10Ms, int64_t idle1Ms) {
+    if (minimumFps >= 30 || idleMs < idle10Ms) return kAod30HzIndex;
+    if (minimumFps >= 10 || idleMs < idle1Ms) return kAod10HzIndex;
+    return kAod1HzIndex;
+}
+
 const char* IndexName(int index) {
     switch (index) {
+        case kAod30HzIndex:
+            return "30 Hz AOD";
+        case kAod10HzIndex:
+            return "10 Hz AOD";
+        case kAod1HzIndex:
+            return "1 Hz AOD";
         case k60HzIndex:
             return "60 Hz rendering floor";
         case k30HzIndex:
@@ -187,6 +207,12 @@ const char* IndexName(int index) {
 
 int IndexToFps(int index) {
     switch (index) {
+        case kAod30HzIndex:
+            return 30;
+        case kAod10HzIndex:
+            return 10;
+        case kAod1HzIndex:
+            return 1;
         case k60HzIndex:
             return 60;
         case k30HzIndex:
@@ -252,6 +278,8 @@ int main(int /* argc */, char** argv) {
     bool wasEnabled = false;
     int64_t lastInteractionNs = NowNs();
     int64_t lastRenderedFrameNs = lastInteractionNs;
+    int64_t dozeStartNs = lastInteractionNs;
+    bool wasDozing = false;
 
     LOG(INFO) << "Pong NT37705 LTPO controller started";
 
@@ -293,6 +321,20 @@ int main(int /* argc */, char** argv) {
             lastRenderedFrameNs = nowNs;
         }
 
+        const int screenState = android::base::GetIntProperty(kScreenStateProperty, kScreenStateOn);
+        const bool isDozing =
+                screenState == kScreenStateDoze || screenState == kScreenStateDozeSuspend;
+        if (isDozing != wasDozing) {
+            appliedIndex = -1;
+            if (isDozing) {
+                dozeStartNs = nowNs;
+            } else {
+                lastInteractionNs = nowNs;
+                lastRenderedFrameNs = nowNs;
+            }
+            wasDozing = isDozing;
+        }
+
         const bool enabled = android::base::GetBoolProperty(
                 "persist.vendor.display.ltpo.enabled", true);
         int targetIndex = kActiveIndex;
@@ -307,19 +349,27 @@ int main(int /* argc */, char** argv) {
             const int64_t idle1Ms = std::max<int64_t>(
                     idle10Ms, android::base::GetIntProperty(
                                       "persist.vendor.display.ltpo.idle_1_ms", 8000));
-            const int64_t interactionIdleMs = (nowNs - lastInteractionNs) / 1000000LL;
-            if (interactionIdleMs < idle30Ms) {
-                targetIndex = kActiveIndex;
-            } else if (sustainedRendering || minimumFps == 60) {
-                targetIndex = k60HzIndex;
+            if (isDozing) {
+                // The NT37705 uses a separate dimming command family in LP1/LP2.
+                // Ignore AOD clock and burn-in-shift frames so they cannot pin the
+                // panel at its 30 Hz command-mode rate.
+                const int64_t dozeIdleMs = (nowNs - dozeStartNs) / 1000000LL;
+                targetIndex = DesiredAodIndex(dozeIdleMs, minimumFps, idle10Ms, idle1Ms);
             } else {
-                const int64_t staticIdleMs =
-                        (nowNs - std::max(lastInteractionNs, lastRenderedFrameNs)) / 1000000LL;
-                const bool renderingJustStopped = lastRenderedFrameNs > lastInteractionNs &&
-                        staticIdleMs < idle30Ms;
-                targetIndex = renderingJustStopped
-                        ? k60HzIndex
-                        : DesiredIndex(staticIdleMs, minimumFps, idle30Ms, idle10Ms, idle1Ms);
+                const int64_t interactionIdleMs = (nowNs - lastInteractionNs) / 1000000LL;
+                if (interactionIdleMs < idle30Ms) {
+                    targetIndex = kActiveIndex;
+                } else if (sustainedRendering || minimumFps == 60) {
+                    targetIndex = k60HzIndex;
+                } else {
+                    const int64_t staticIdleMs =
+                            (nowNs - std::max(lastInteractionNs, lastRenderedFrameNs)) / 1000000LL;
+                    const bool renderingJustStopped = lastRenderedFrameNs > lastInteractionNs &&
+                            staticIdleMs < idle30Ms;
+                    targetIndex = renderingJustStopped
+                            ? k60HzIndex
+                            : DesiredIndex(staticIdleMs, minimumFps, idle30Ms, idle10Ms, idle1Ms);
+                }
             }
         }
 
