@@ -34,13 +34,13 @@ constexpr char kMeasuredFpsPath[] = "/sys/class/drm/card0/sde-crtc-0/measured_fp
 constexpr char kDisplayEnabledPath[] = "/sys/class/drm/card0/card0-DSI-1/enabled";
 constexpr char kBrightnessPath[] = "/sys/class/backlight/panel0-backlight/brightness";
 constexpr char kInputDirectory[] = "/dev/input";
+constexpr char kCurrentFpsProperty[] = "vendor.display.ltpo.current_fps";
 
 constexpr int kActiveIndex = 16;
 constexpr int k60HzIndex = 7;
 constexpr int k30HzIndex = 8;
 constexpr int k10HzIndex = 10;
 constexpr int k1HzIndex = 11;
-constexpr int64_t kOverlayFrameGraceNs = 2000000000LL;
 constexpr unsigned long long kOverlayMaxFrames = 2;
 
 std::atomic<int64_t> gLastInputNs{0};
@@ -173,7 +173,7 @@ int DesiredIndex(int64_t idleMs, int minimumFps, int64_t idle30Ms, int64_t idle1
 const char* IndexName(int index) {
     switch (index) {
         case k60HzIndex:
-            return "60 Hz idle";
+            return "60 Hz rendering floor";
         case k30HzIndex:
             return "30 Hz idle";
         case k10HzIndex:
@@ -196,7 +196,15 @@ int IndexToFps(int index) {
         case k1HzIndex:
             return 1;
         default:
-            return 120;
+            // The active index can represent a 120, 90, or 60 Hz physical
+            // SurfaceFlinger mode. Let the overlay use that mode directly.
+            return 0;
+    }
+}
+
+void PublishPanelFps(int fps) {
+    if (!android::base::SetProperty(kCurrentFpsProperty, std::to_string(fps))) {
+        LOG(WARNING) << "Unable to publish the effective panel refresh rate";
     }
 }
 
@@ -204,12 +212,12 @@ bool ApplyIndex(int index) {
     if (!android::base::WriteStringToFile(std::to_string(index), kSkipFramePath)) {
         PLOG(WARNING) << "Failed to switch panel to " << IndexName(index) << " (index " << index
                       << ")";
+        // Fixed 60/90 Hz modes intentionally reject panel-side skip-frame
+        // commands. Fall back to SurfaceFlinger's physical mode in that case.
+        PublishPanelFps(0);
         return false;
     }
-    if (!android::base::SetProperty("vendor.display.ltpo.current_fps",
-                                    std::to_string(IndexToFps(index)))) {
-        LOG(WARNING) << "Unable to publish the effective panel refresh rate";
-    }
+    PublishPanelFps(IndexToFps(index));
     LOG(INFO) << "Panel state: " << IndexName(index) << " (index " << index << ")";
     return true;
 }
@@ -242,8 +250,8 @@ int main(int /* argc */, char** argv) {
     int appliedIndex = -1;
     int previousBrightness = -1;
     bool wasEnabled = false;
-    int64_t lastActivityNs = NowNs();
-    int64_t lastTransitionNs = 0;
+    int64_t lastInteractionNs = NowNs();
+    int64_t lastRenderedFrameNs = lastInteractionNs;
 
     LOG(INFO) << "Pong NT37705 LTPO controller started";
 
@@ -258,28 +266,31 @@ int main(int /* argc */, char** argv) {
 
         const int64_t nowNs = NowNs();
         if (!wasEnabled) {
-            lastActivityNs = nowNs;
+            lastInteractionNs = nowNs;
+            lastRenderedFrameNs = nowNs;
             wasEnabled = true;
         }
 
         int brightness = -1;
         if (ReadBrightness(&brightness)) {
             if (previousBrightness >= 0 && brightness != previousBrightness) {
-                lastActivityNs = nowNs;
+                lastInteractionNs = nowNs;
             }
             previousBrightness = brightness;
         }
 
         const int64_t inputNs = gLastInputNs.load(std::memory_order_relaxed);
         const unsigned long long frameCount = ReadRecentFrameCount();
-        // Updating the developer refresh-rate overlay produces one compositor
-        // frame after a panel transition. Ignore that bounded echo while still
-        // treating input, brightness changes, or a real frame burst as activity.
-        const bool overlayOnlyFrames =
-                lastTransitionNs > 0 && nowNs - lastTransitionNs < kOverlayFrameGraceNs &&
-                frameCount <= kOverlayMaxFrames;
-        if (inputNs > lastActivityNs || (frameCount > 0 && !overlayOnlyFrames)) {
-            lastActivityNs = std::max(inputNs, nowNs);
+        if (inputNs > lastInteractionNs) {
+            lastInteractionNs = inputNs;
+        }
+
+        // A few diagnostic or clock frames should not hold the display at a
+        // high rate. Sustained rendering, including video or an animated app,
+        // receives a 60 Hz floor once the recent-input grace period expires.
+        const bool sustainedRendering = frameCount > kOverlayMaxFrames;
+        if (sustainedRendering) {
+            lastRenderedFrameNs = nowNs;
         }
 
         const bool enabled = android::base::GetBoolProperty(
@@ -296,14 +307,24 @@ int main(int /* argc */, char** argv) {
             const int64_t idle1Ms = std::max<int64_t>(
                     idle10Ms, android::base::GetIntProperty(
                                       "persist.vendor.display.ltpo.idle_1_ms", 8000));
-            const int64_t idleMs = (nowNs - lastActivityNs) / 1000000LL;
-            targetIndex = DesiredIndex(idleMs, minimumFps, idle30Ms, idle10Ms, idle1Ms);
+            const int64_t interactionIdleMs = (nowNs - lastInteractionNs) / 1000000LL;
+            if (interactionIdleMs < idle30Ms) {
+                targetIndex = kActiveIndex;
+            } else if (sustainedRendering || minimumFps == 60) {
+                targetIndex = k60HzIndex;
+            } else {
+                const int64_t staticIdleMs =
+                        (nowNs - std::max(lastInteractionNs, lastRenderedFrameNs)) / 1000000LL;
+                const bool renderingJustStopped = lastRenderedFrameNs > lastInteractionNs &&
+                        staticIdleMs < idle30Ms;
+                targetIndex = renderingJustStopped
+                        ? k60HzIndex
+                        : DesiredIndex(staticIdleMs, minimumFps, idle30Ms, idle10Ms, idle1Ms);
+            }
         }
 
         if (targetIndex != appliedIndex) {
-            if (ApplyIndex(targetIndex)) {
-                lastTransitionNs = nowNs;
-            }
+            ApplyIndex(targetIndex);
             // A fixed 60/90 Hz display mode can temporarily reject the NT37705
             // command. Record the attempt to avoid repeatedly hitting the kernel.
             appliedIndex = targetIndex;

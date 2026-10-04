@@ -145,7 +145,9 @@ vendor.display.enable_ic_hw_roundedcorner=1
 vendor.display.enable_optimize_refresh=0
 vendor.display.enable_rc_support=1
 vendor.display.enable_rounded_corner=1
-vendor.display.ltpo.current_fps=120
+# Zero delegates active 120/90/60 Hz modes to SurfaceFlinger. The LTPO
+# controller publishes explicit rates only for successful panel-side states.
+vendor.display.ltpo.current_fps=0
 vendor.display.use_layer_ext=1
 vendor.display.use_smooth_motion=1
 vendor.display.vds_allow_hwc=1
