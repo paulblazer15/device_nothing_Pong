@@ -368,14 +368,14 @@ int main(int /* argc */, char** argv) {
                                  "persist.vendor.display.ltpo.idle_30_ms", 1500));
             const int64_t idle10Ms = std::max<int64_t>(
                     idle30Ms, android::base::GetIntProperty(
-                                      "persist.vendor.display.ltpo.idle_10_ms", 4000));
+                                      "persist.vendor.display.ltpo.idle_10_ms", 3500));
             const int64_t keyguard30Ms = std::clamp<int64_t>(
                     android::base::GetIntProperty(
                             "persist.vendor.display.ltpo.keyguard_30_ms", 3000),
                     idle30Ms, idle10Ms);
             const int64_t idle1Ms = std::max<int64_t>(
                     idle10Ms, android::base::GetIntProperty(
-                                      "persist.vendor.display.ltpo.idle_1_ms", 8000));
+                                      "persist.vendor.display.ltpo.idle_1_ms", 6500));
             if (isDozing) {
                 // The NT37705 uses a separate dimming command family in LP1/LP2.
                 // Ignore AOD clock and burn-in-shift frames so they cannot pin the
