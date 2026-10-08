@@ -38,6 +38,8 @@ constexpr char kCurrentFpsProperty[] = "vendor.display.ltpo.current_fps";
 constexpr char kScreenStateProperty[] = "debug.tracing.screen_state";
 constexpr char kKeyguardStateProperty[] = "debug.tracing.keyguard_state";
 constexpr char kForcePeakRefreshRateProperty[] = "debug.tracing.force_peak_refresh_rate";
+constexpr char kAxMinRefreshRateProperty[] = "debug.tracing.ax_min_refresh_rate";
+constexpr char kAxPeakRefreshRateProperty[] = "debug.tracing.ax_peak_refresh_rate";
 
 constexpr int kAod30HzIndex = 0;
 constexpr int kAod10HzIndex = 1;
@@ -47,7 +49,9 @@ constexpr int k60HzIndex = 7;
 constexpr int k30HzIndex = 8;
 constexpr int k10HzIndex = 10;
 constexpr int k1HzIndex = 11;
+constexpr int kSurfaceFlingerManagedIndex = -2;
 constexpr unsigned long long kOverlayMaxFrames = 2;
+constexpr int64_t kApplyRetryNs = 500000000LL;
 
 constexpr int kScreenStateOn = 2;
 constexpr int kScreenStateDoze = 3;
@@ -245,13 +249,19 @@ void PublishPanelFps(int fps) {
     }
 }
 
-bool ApplyIndex(int index) {
+bool ApplyIndex(int index, int fallbackFps) {
     if (!android::base::WriteStringToFile(std::to_string(index), kSkipFramePath)) {
-        PLOG(WARNING) << "Failed to switch panel to " << IndexName(index) << " (index " << index
-                      << ")";
+        if (errno == EINVAL) {
+            LOG(DEBUG) << "Deferring panel state " << IndexName(index) << " (index " << index
+                       << ") until the LTPO base mode is active";
+        } else {
+            PLOG(WARNING) << "Failed to switch panel to " << IndexName(index) << " (index "
+                          << index << ")";
+        }
         // Fixed 60/90 Hz modes intentionally reject panel-side skip-frame
-        // commands. Fall back to SurfaceFlinger's physical mode in that case.
-        PublishPanelFps(0);
+        // commands. Report the effective framework cap while waiting for the
+        // 120 Hz LTPO base mode to become available for a retry.
+        PublishPanelFps(fallbackFps);
         return false;
     }
     PublishPanelFps(IndexToFps(index));
@@ -285,6 +295,8 @@ int main(int /* argc */, char** argv) {
     inputThread.detach();
 
     int appliedIndex = -1;
+    int pendingIndex = -1;
+    int64_t retryAfterNs = 0;
     int previousBrightness = -1;
     bool wasEnabled = false;
     int64_t lastInteractionNs = NowNs();
@@ -299,6 +311,8 @@ int main(int /* argc */, char** argv) {
         bool displayEnabled = false;
         if (!ReadDisplayEnabled(&displayEnabled) || !displayEnabled) {
             appliedIndex = -1;
+            pendingIndex = -1;
+            retryAfterNs = 0;
             wasEnabled = false;
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
             continue;
@@ -360,8 +374,14 @@ int main(int /* argc */, char** argv) {
                 "persist.vendor.display.ltpo.enabled", true);
         const bool forcePeakRefreshRate =
                 android::base::GetBoolProperty(kForcePeakRefreshRateProperty, false);
+        const int axMinRefreshRate =
+                android::base::GetIntProperty(kAxMinRefreshRateProperty, 0);
+        const int axPeakRefreshRate =
+                android::base::GetIntProperty(kAxPeakRefreshRateProperty, 120);
         int targetIndex = kActiveIndex;
-        if (enabled && (!forcePeakRefreshRate || isDozing)) {
+        if (enabled && !isDozing && axMinRefreshRate > 0 && axPeakRefreshRate < 120) {
+            targetIndex = kSurfaceFlingerManagedIndex;
+        } else if (enabled && (!forcePeakRefreshRate || isDozing)) {
             const int minimumFps = ReadMinimumFps();
             const int64_t idle30Ms = std::max<int64_t>(
                     250, android::base::GetIntProperty(
@@ -404,12 +424,29 @@ int main(int /* argc */, char** argv) {
                 }
             }
         }
+        if (enabled && targetIndex == kActiveIndex && axPeakRefreshRate > 0
+                && axPeakRefreshRate < 120) {
+            targetIndex = k60HzIndex;
+        }
 
-        if (targetIndex != appliedIndex) {
-            ApplyIndex(targetIndex);
-            // A fixed 60/90 Hz display mode can temporarily reject the NT37705
-            // command. Record the attempt to avoid repeatedly hitting the kernel.
-            appliedIndex = targetIndex;
+        if (targetIndex != appliedIndex
+                && (targetIndex != pendingIndex || nowNs >= retryAfterNs)) {
+            bool applied = true;
+            if (targetIndex == kSurfaceFlingerManagedIndex) {
+                PublishPanelFps(0);
+            } else {
+                const int fallbackFps = axPeakRefreshRate > 0 && axPeakRefreshRate < 120
+                        ? axPeakRefreshRate : 0;
+                applied = ApplyIndex(targetIndex, fallbackFps);
+            }
+            if (applied) {
+                appliedIndex = targetIndex;
+                pendingIndex = -1;
+                retryAfterNs = 0;
+            } else {
+                pendingIndex = targetIndex;
+                retryAfterNs = nowNs + kApplyRetryNs;
+            }
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
