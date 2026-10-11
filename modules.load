@@ -232,6 +232,7 @@ hdmi_dlkm.ko
 camera.ko
 msm-cvp.ko
 gsim.ko
+rmnet_mem.ko
 ipam.ko
 ipanetm.ko
 rndisipam.ko
