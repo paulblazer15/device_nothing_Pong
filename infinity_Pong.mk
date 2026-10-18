@@ -11,17 +11,14 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/full_base_telephony.mk)
 # Inherit from Pong device
 $(call inherit-product, device/nothing/Pong/device.mk)
 
-# Inherit some common Lineage stuff.
-$(call inherit-product, vendor/lineage/config/common_full_phone.mk)
+# Inherit some common Project Infinity X stuff.
+$(call inherit-product, vendor/infinity/config/common_full_phone.mk)
 
-# AxionAOSP
-AXION_MAINTAINER := Paul
-AXION_PROCESSOR := Snapdragon_8+_Gen_1
-AXION_CAMERA_REAR_INFO := 50,50
-AXION_CAMERA_FRONT_INFO := 32
-TARGET_ENABLE_BLUR := true
+# Project Infinity X
+INFINITY_MAINTAINER := Paul
+TARGET_HAS_UDFPS := true
 
-PRODUCT_NAME := lineage_Pong
+PRODUCT_NAME := infinity_Pong
 PRODUCT_DEVICE := Pong
 PRODUCT_MANUFACTURER := Nothing
 PRODUCT_BRAND := Nothing
