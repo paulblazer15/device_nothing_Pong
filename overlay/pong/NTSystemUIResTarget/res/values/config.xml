@@ -5,6 +5,11 @@
 -->
 <resources>
 
+    <!-- Stock low-power AOD brightness sensor exposed by sensors.ssc.so.
+         The vendor sensor type intentionally uses the spelling "amblient".
+         The stock brightness and scrim tables match the SystemUI defaults. -->
+    <string name="doze_brightness_sensor_type" translatable="false">android.sensor.amblient_light_scene</string>
+
      <!-- Should we vibrate on an icon animation of the shelf. This should only be active if the
           vibrator is capable of subtle vibrations -->
      <bool name="config_vibrateOnIconAnimation">true</bool>
