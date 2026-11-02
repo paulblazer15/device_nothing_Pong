@@ -95,6 +95,10 @@
          but the display is fully on. -->
     <integer name="config_autoBrightnessShortTermModelTimeout">120000</integer>
 
+    <!-- Stock Pong light debounce values, also used when display config is unavailable. -->
+    <integer name="config_autoBrightnessBrighteningLightDebounce">1000</integer>
+    <integer name="config_autoBrightnessDarkeningLightDebounce">4000</integer>
+
     <string-array name="config_nightDisplayColorTemperatureCoefficients">
        <item>0.0000000000</item>
        <item>0.0000000000</item>
@@ -376,6 +380,9 @@
          that can be set by the user. -->
     <item type="dimen" name="config_screenBrightnessDimFloat">0.05</item>
 
+    <!-- Stock Pong doze brightness on the normalized 0..1 scale. -->
+    <item type="dimen" name="config_screenBrightnessDozeFloat">0.05</item>
+
     <!-- Array of light sensor lux values to define our levels for auto backlight brightness support.
          The N entries of this array define N + 1 control points as follows:
          (1-based arrays)
@@ -441,10 +448,10 @@
         <item>251.03</item>    <!--   1700 lux -->
         <item>321.37</item>    <!--   2800 lux -->
         <item>351.83</item>    <!--   3500 lux -->
-        <item>490.0</item>     <!--   4500 lux (Transition point to HBM) -->
-        <item>725.02</item>    <!--   7000 lux (HBM step 1) -->
-        <item>868.98</item>    <!--  18000 lux (HBM step 2) -->
-        <item>980.0</item>     <!--  40000 lux (HBM step 3) -->
+        <item>490.0</item>     <!--   4500 lux -->
+        <item>725.02</item>    <!--   7000 lux -->
+        <item>868.98</item>    <!--  18000 lux -->
+        <item>980.0</item>     <!--  40000 lux -->
     </array>
 
      <!-- Vibrator pattern for feedback about a long screen/key press -->
