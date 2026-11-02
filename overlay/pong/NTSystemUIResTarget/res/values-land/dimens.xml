@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+     Copyright (C) 2026 The LineageOS Project
+     SPDX-License-Identifier: Apache-2.0
+-->
+<resources>
+    <!-- Match the tuned portrait corner inset; SystemUI also accounts for the cutout. -->
+    <dimen name="rounded_corner_content_padding">20dp</dimen>
+</resources>
